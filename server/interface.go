@@ -1,5 +1,7 @@
 package server
 
+import "github.com/balrogsxt/xtcp/pack"
+
 type ITcpServer interface{
 	// Start 服务启动
 	Start(addr string) error
@@ -15,6 +17,6 @@ type TcpListener interface {
 	//OnClose 客户端关闭事件
 	OnClose(conn *TcpConnection)
 	//OnMessage 客户端发送消息事件
-	OnMessage(conn *TcpConnection,data []byte)
+	OnMessage(conn *TcpConnection,data *pack.DataPack)
 }
 

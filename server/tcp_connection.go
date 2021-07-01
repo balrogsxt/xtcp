@@ -51,7 +51,7 @@ func (c *TcpConnection) call()  {
 		}
 		if c.listener != nil {
 			//解包数据
-			c.listener.OnMessage(c,dataPack.Data)
+			c.listener.OnMessage(c,dataPack)
 		}
 	}
 }
