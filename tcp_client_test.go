@@ -13,14 +13,6 @@ import (
 
 //客户端部分测试入口
 func TestClient(t *testing.T)  {
-	//fmt.Println("开始了")
-	//
-	//timer := time.NewTimer(time.Second * 3)
-	//<- timer.C
-	//fmt.Println("到时间了")
-
-
-
 	tcpAddr,err := net.ResolveTCPAddr("tcp","127.0.0.1:6001")
 	if err != nil {
 		t.Fatalf("创建tcp地址失败: %s",err.Error())

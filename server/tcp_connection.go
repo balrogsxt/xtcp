@@ -15,20 +15,27 @@ type TcpConnection struct {
 	fd int
 	// conn tcp连接
 	conn *net.TCPConn
+
+	server *TcpServer
 	//读写锁
 	sync.RWMutex
 	//tcp连接事件监听
 	listener TcpListener
-	//心跳检测机制
+	//心跳检测定时器
 	heartTimer *time.Ticker
+	//上一次活动时间
 	heartLastTime int64
+	isClosed bool
 }
 
-func NewTcpConnection(fd int,conn *net.TCPConn) *TcpConnection {
+func NewTcpConnection(fd int,s *TcpServer,conn *net.TCPConn) *TcpConnection {
 	tcpConn := TcpConnection{
 		fd: fd,
 		conn: conn,
+		server: s,
 	}
+	tcpConn.isClosed = false
+	s.AddConnection(&tcpConn)
 	go tcpConn.listenReader()
 	go tcpConn.startHeart()
 	//心跳检测机制
@@ -40,6 +47,8 @@ func (c *TcpConnection) listenReader()  {
 		c.listener.OnOpen(c)
 	}
 	defer func(c *TcpConnection) {
+		c.isClosed = true
+		c.GetServer().RemoveConnection(c.fd)
 		if c.listener != nil {
 			c.listener.OnClose(c)
 		}
@@ -89,7 +98,7 @@ func (c *TcpConnection) startHeart(){
 //公开方法
 
 //SetListener 设置监听事件
-func (c *TcpConnection) SetListener(listener TcpListener) {
+func (c *TcpConnection) setListener(listener TcpListener) {
 	c.listener = listener
 }
 
@@ -97,9 +106,13 @@ func (c *TcpConnection) SetListener(listener TcpListener) {
 func (c *TcpConnection) GetFd() int {
 	return c.fd
 }
-// GetConnection 获取底层连接
-func (c *TcpConnection) GetConnection() *net.TCPConn {
+// GetOriginTcpConnection 获取底层原始连接
+func (c *TcpConnection) GetOriginTcpConnection() *net.TCPConn {
 	return c.conn
+}
+// GetServer 获取TCP Server
+func (c *TcpConnection) GetServer() *TcpServer {
+	return c.server
 }
 // GetRemoteAddr 获取客户端连接地址
 func (c *TcpConnection) GetRemoteAddr() net.Addr{
@@ -133,5 +146,6 @@ func (c *TcpConnection) Close() error {
 	if c.heartTimer != nil {
 		c.heartTimer.Stop()
 	}
+	c.isClosed = true
 	return nil
 }

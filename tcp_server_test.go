@@ -12,9 +12,20 @@ import (
 type TestListener struct {}
 
 func (c *TestListener) OnOpen(conn *server.TcpConnection)  {
+	//给所有客户端发送上线通知
+	b_bytes,_ := proto.Marshal(&protocol.BroadcastMsg{
+		Content: fmt.Sprintf("%d -> %s上线了",conn.GetFd(),conn.GetRemoteAddr().String()),
+		SendTime: time.Now().Unix(),
+	})
+	conn.GetServer().Broadcast(b_bytes)
 	fmt.Println(conn.GetRemoteAddr(),"客户端已连接",conn.GetFd())
 }
 func (c *TestListener) OnClose(conn *server.TcpConnection)  {
+	b_bytes,_ := proto.Marshal(&protocol.BroadcastMsg{
+		Content: fmt.Sprintf("%d -> %s离开了",conn.GetFd(),conn.GetRemoteAddr().String()),
+		SendTime: time.Now().Unix(),
+	})
+	conn.GetServer().Broadcast(b_bytes)
 	fmt.Println(conn.GetRemoteAddr(),"客户端已断开",conn.GetFd())
 }
 func (c *TestListener) OnMessage(conn *server.TcpConnection,data *pack.DataPack)  {
