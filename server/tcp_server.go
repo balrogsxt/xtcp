@@ -39,7 +39,6 @@ func (c *TcpServer) Start(addr string) error {
 		//协程执行处理业务逻辑
 		fd++
 	}
-	return nil
 }
 func (c *TcpServer) Stop() {
 

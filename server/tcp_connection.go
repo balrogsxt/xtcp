@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 // TcpConnection tcp连接
@@ -18,6 +19,9 @@ type TcpConnection struct {
 	sync.RWMutex
 	//tcp连接事件监听
 	listener TcpListener
+	//心跳检测机制
+	heartTimer *time.Ticker
+	heartLastTime int64
 }
 
 func NewTcpConnection(fd int,conn *net.TCPConn) *TcpConnection {
@@ -25,10 +29,13 @@ func NewTcpConnection(fd int,conn *net.TCPConn) *TcpConnection {
 		fd: fd,
 		conn: conn,
 	}
-	go tcpConn.call()
+	go tcpConn.listenReader()
+	go tcpConn.startHeart()
+	//心跳检测机制
 	return &tcpConn
 }
-func (c *TcpConnection) call()  {
+// 监听客户端发送
+func (c *TcpConnection) listenReader()  {
 	if c.listener != nil {
 		c.listener.OnOpen(c)
 	}
@@ -39,24 +46,45 @@ func (c *TcpConnection) call()  {
 	}(c)
 	defer c.Close()
 	//持续接收客户端发来的数据
+
+	//心跳记录
+	c.recordHeart()
 	for {
 		dataPack,err := pack.ParsePack(c.conn)
 		if err != nil {
 			if err == io.EOF {
-				logger.Error("客户端连接已断开")
-				break
+				logger.Error("客户端连接已主动断开")
+			}else{
+				logger.Error("与客户端连接断开: %s",err.Error())
 			}
-			logger.Error("读取Buffer失败: %s",err.Error())
-			continue
+			break
 		}
+		//心跳记录
+		c.recordHeart()
+
 		if c.listener != nil {
 			//解包数据
 			c.listener.OnMessage(c,dataPack)
 		}
 	}
 }
-
-
+func (c *TcpConnection) recordHeart(){
+	//心跳记录
+	c.heartLastTime = time.Now().Unix()
+}
+// startHeart 开启心跳检测
+func (c *TcpConnection) startHeart(){
+	// 检测时间、超时时间后续更改为可变配置
+	c.heartTimer = time.NewTicker(time.Second * 20)
+	for {
+		<- c.heartTimer.C
+		if time.Now().Unix() - c.heartLastTime > 60 {
+			//心跳超时
+			c.Close()
+			logger.Error("关闭超时心跳客户端: %s",c.GetRemoteAddr().String())
+		}
+	}
+}
 
 //公开方法
 
@@ -96,5 +124,14 @@ func (c *TcpConnection) Send(data []byte) error {
 }
 //Close 主动断开该客户端连接
 func (c *TcpConnection) Close() error {
-	return c.conn.Close()
+	c.Lock()
+	defer c.Unlock()
+	//做一些其他操作
+	//1.关闭连接
+	c.conn.Close()
+	//2.关闭心跳检测定时器
+	if c.heartTimer != nil {
+		c.heartTimer.Stop()
+	}
+	return nil
 }
