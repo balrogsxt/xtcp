@@ -1,0 +1,6 @@
+/.idea
+/.vscode
+*.exe
+/config.yaml
+/logs
+.DS_Store
