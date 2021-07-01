@@ -27,7 +27,7 @@ func (c *TcpServer) Start(addr string) error {
 	logger.Debug("Tcp客户端已启动,监听在 %s",addr)
 
 	//监听tcp连接
-	var fd = 0
+	var fd = 1
 	for{
 		conn,err := listener.AcceptTCP()
 		if err != nil {

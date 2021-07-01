@@ -3,9 +3,10 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/balrogsxt/xtcp/pack"
 	"github.com/balrogsxt/xtcp/server"
+	"github.com/balrogsxt/xtcp/utils/logger"
 	"io"
-	"log"
 	"net"
 	"testing"
 	"time"
@@ -19,8 +20,9 @@ func (c *TestListener) OnClose(conn *server.TcpConnection)  {
 	fmt.Println(conn.GetRemoteAddr(),"客户端已断开",conn.GetFd())
 }
 func (c *TestListener) OnMessage(conn *server.TcpConnection,data []byte)  {
-	fmt.Println(conn.GetRemoteAddr(),"客户端发送消息:",conn.GetFd(),string(data))
+	fmt.Println(conn.GetRemoteAddr(),"客户端发的消息:",conn.GetFd(),string(data))
 	conn.Send([]byte("收到数据:"+string(data)))
+	//fmt.Println(fmt.Sprintf("%#v \n",data),"长度:",len(data))
 }
 
 //服务端部分测试入口
@@ -41,25 +43,57 @@ func TestClient(t *testing.T)  {
 	if err != nil {
 		t.Fatalf("连接tcp服务器失败: %s",err.Error())
 	}
-	conn.Write([]byte("字符串测试发送"))
 
-	//go func() {
+
+	go func() {
 		reader := bufio.NewReader(conn)
 		for {
-			buffer := make([]byte,1024)
-			size,err := reader.Read(buffer)
+
+			buffer := make([]byte,pack.GetHeadLen())
+			_,err := reader.Read(buffer)
 			if err == io.EOF {
-				log.Printf("连接已断开")
 				break
 			}
 			if err != nil {
-				log.Printf("接收失败: %s",err.Error())
+				logger.Error("读取Buffer失败: %s",err.Error())
 				continue
 			}
-			bufferBytes := buffer[0:size]
-			fmt.Println("收到服务端发的数据:" + string(bufferBytes))
-			conn.Write([]byte("ping -> "+time.Now().Format("2006-01-02 15:04:05")))
-			time.Sleep(time.Millisecond * 500)
+			//解析出包头后,根据包头数据结果拿到数据包
+			dataPack,err := pack.UnPack(buffer)
+			if err != nil {
+				//拆包失败...
+				logger.Error("拆包失败: %s",err.Error())
+				continue
+			}
+			//拆包完成,再次读取数据包数据
+			if dataPack.Len > 0 {
+				//再次读取包头
+				buffer := make([]byte,dataPack.Len)
+				_,err := reader.Read(buffer)
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					logger.Error("读取Buffer失败: %s",err.Error())
+					continue
+				}
+				fmt.Println(fmt.Sprintf("收到内容: %s",buffer))
+			}
 		}
-	//}()
+	}()
+	for {
+		d := []byte(time.Now().Format("2006-01-02 15:04:05"))
+		datapack,err := pack.Pack(pack.DataPack{
+			Type: 1,
+			Len: uint32(len(d)),
+			Data: d,
+		})
+		if err != nil {
+			t.Fatalf("封包失败: %s",err.Error())
+		}
+		//发送封包数据
+		conn.Write(datapack)
+		time.Sleep(time.Second)
+	}
+
 }

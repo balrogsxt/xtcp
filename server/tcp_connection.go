@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/balrogsxt/xtcp/pack"
 	"github.com/balrogsxt/xtcp/utils/logger"
 	"io"
 	"net"
@@ -40,8 +41,9 @@ func (c *TcpConnection) call()  {
 
 	//持续接收客户端发来的数据
 	for {
-		buffer := make([]byte,1024)
-		size,err := c.conn.Read(buffer)
+		//解包读取数据,先取出包头字节
+		buffer := make([]byte,pack.GetHeadLen())
+		_,err := c.conn.Read(buffer)
 		if err == io.EOF {
 			break
 		}
@@ -49,9 +51,31 @@ func (c *TcpConnection) call()  {
 			logger.Error("读取Buffer失败: %s",err.Error())
 			continue
 		}
-		if c.listener != nil {
-			c.listener.OnMessage(c,buffer[0:size])
+		//解析出包头后,根据包头数据结果拿到数据包
+		dataPack,err := pack.UnPack(buffer)
+		if err != nil {
+			//拆包失败...
+			logger.Error("拆包失败: %s",err.Error())
+			continue
 		}
+		//拆包完成,再次读取数据包数据
+		if dataPack.Len > 0 {
+			//再次读取包头
+			buffer := make([]byte,dataPack.Len)
+			_,err := c.conn.Read(buffer)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				logger.Error("读取Buffer失败: %s",err.Error())
+				continue
+			}
+			if c.listener != nil {
+				//解包数据
+				c.listener.OnMessage(c,buffer)
+			}
+		}
+
 	}
 }
 
@@ -79,7 +103,18 @@ func (c *TcpConnection) GetRemoteAddr() net.Addr{
 
 //Send 发送数据包给客户端
 func (c *TcpConnection) Send(data []byte) error {
-	_,err := c.conn.Write(data)
+
+	//创建封包
+	bytes,err := pack.Pack(pack.DataPack{
+		Type: 1,
+		Len: uint32(len(data)),
+		Data: data,
+	})
+	if err != nil {
+		return err
+	}
+
+	_,err = c.conn.Write(bytes)
 	return err
 }
 //Close 主动断开该客户端连接
