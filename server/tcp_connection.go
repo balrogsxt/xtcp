@@ -38,44 +38,21 @@ func (c *TcpConnection) call()  {
 		}
 	}(c)
 	defer c.Close()
-
 	//持续接收客户端发来的数据
 	for {
-		//解包读取数据,先取出包头字节
-		buffer := make([]byte,pack.GetHeadLen())
-		_,err := c.conn.Read(buffer)
-		if err == io.EOF {
-			break
-		}
+		dataPack,err := pack.ParsePack(c.conn)
 		if err != nil {
+			if err == io.EOF {
+				logger.Error("客户端连接已断开")
+				break
+			}
 			logger.Error("读取Buffer失败: %s",err.Error())
 			continue
 		}
-		//解析出包头后,根据包头数据结果拿到数据包
-		dataPack,err := pack.UnPack(buffer)
-		if err != nil {
-			//拆包失败...
-			logger.Error("拆包失败: %s",err.Error())
-			continue
+		if c.listener != nil {
+			//解包数据
+			c.listener.OnMessage(c,dataPack.Data)
 		}
-		//拆包完成,再次读取数据包数据
-		if dataPack.Len > 0 {
-			//再次读取包头
-			buffer := make([]byte,dataPack.Len)
-			_,err := c.conn.Read(buffer)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				logger.Error("读取Buffer失败: %s",err.Error())
-				continue
-			}
-			if c.listener != nil {
-				//解包数据
-				c.listener.OnMessage(c,buffer)
-			}
-		}
-
 	}
 }
 

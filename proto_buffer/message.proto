@@ -1,0 +1,13 @@
+syntax = "proto3";
+option go_package = "protocol/";
+//广播消息
+message BroadcastMsg{
+  string content = 1; //广播消息内容
+  int64 send_time = 2;//发布时间
+}
+message PrivateMsg{
+  int64 from_user_id = 1;//发送者ID
+  int64 to_user_id = 2;//接收者Id
+  string content = 3;//消息内容
+  int64 send_time = 4;//发送时间
+}

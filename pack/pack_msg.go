@@ -3,6 +3,7 @@ package pack
 import (
 	"bytes"
 	"encoding/binary"
+	"net"
 )
 
 type DataPack struct {
@@ -44,4 +45,31 @@ func UnPack(data []byte) (*DataPack,error) {
 		return nil,err
 	}
 	return datapack,nil
+}
+
+//ParsePack 快速从TCP连接数据中解包
+func ParsePack(conn *net.TCPConn) (*DataPack,error) {
+	//1.先读取包头字节获取type、length
+	buffer := make([]byte,GetHeadLen())
+	_,err := conn.Read(buffer)
+	if err != nil {
+		return nil,err
+	}
+	//解析出包头后,根据包头数据结果拿到数据包
+	dataPack,err := UnPack(buffer)
+	if err != nil { //拆包失败
+		return nil,err
+	}
+	//拆包完成,再次读取数据包数据
+	if dataPack.Len > 0 {
+		//再次读取包头
+		buffer := make([]byte,dataPack.Len)
+		_,err := conn.Read(buffer)
+		if err != nil {
+			return nil,err
+		}
+		dataPack.Data = buffer
+		return dataPack,nil
+	}
+	return nil,nil //无可用的数据包
 }
