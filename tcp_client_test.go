@@ -51,7 +51,7 @@ func TestClient(t *testing.T)  {
 		}
 		//发送封包数据
 		conn.Write(datapack)
-		time.Sleep(time.Second * 10)
+		time.Sleep(time.Second * 5)
 	}
 
 }

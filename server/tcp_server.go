@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"github.com/balrogsxt/xtcp/utils/logger"
 	"net"
 	"sync"
@@ -10,11 +11,17 @@ type TcpServer struct {
 	//基础事件监听
 	listener TcpListener
 	connections sync.Map
+	config TcpServerConfig
+}
+type TcpServerConfig struct {
+	HeartInterval int //心跳检测间隔秒数,小于等于0时不适用
+	HeartTimeout int //超时时间,不可低于HeartInterval
+	DataPack bool //是否进行封包,拆包处理
 }
 
-func NewTcpServer() *TcpServer {
+func NewTcpServer(config TcpServerConfig) *TcpServer {
 	return &TcpServer{
-
+		config: config,
 	}
 }
 func (c *TcpServer) Start(addr string) error {
@@ -27,6 +34,16 @@ func (c *TcpServer) Start(addr string) error {
 		return err
 	}
 	_ = listener
+	if c.config.HeartInterval > 0 && c.config.HeartTimeout >= c.config.HeartInterval{
+		logger.Debug("[心跳检测] 已启用心跳检测机制")
+		logger.Debug("[心跳检测] 检测间隔 %d 秒",c.config.HeartInterval)
+		logger.Debug("[心跳检测] 超时时间 %d 秒",c.config.HeartTimeout)
+	}else{
+		if c.config.HeartInterval > c.config.HeartTimeout {
+			return errors.New("心跳检测时间不可大于超时时间")
+		}
+	}
+
 	logger.Debug("Tcp客户端已启动,监听在 %s",addr)
 
 	//监听tcp连接
@@ -72,7 +89,7 @@ func (c *TcpServer) GetConnection(fd int) *TcpConnection {
 //Broadcast 发送广播消息
 func (c *TcpServer) Broadcast(data []byte) {
 	c.GetAllConnection(func(connection *TcpConnection) {
-		connection.Send(data)
+		connection.SendBytes(data)
 	})
 }
 //GetAllConnection 回调获取所有连接

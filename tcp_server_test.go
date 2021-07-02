@@ -48,10 +48,13 @@ func (c *TestListener) OnMessage(conn *server.TcpConnection,data *pack.DataPack)
 
 //服务端部分测试入口
 func TestServer(t *testing.T)  {
-	s := server.NewTcpServer()
+	s := server.NewTcpServer(server.TcpServerConfig{
+		HeartInterval: 5,
+		HeartTimeout: 5,
+	})
 	listen := new(TestListener)
 	s.SetListener(listen)
-	s.Start(":6001")
+	fmt.Println(s.Start(":6001"))
 }
 
 

@@ -11,6 +11,15 @@ type DataPack struct {
 	Len uint32 //uint32 -> 4字节
 	Data []byte
 }
+
+func NewDataPack(typeId uint32,data []byte) ([]byte,error) {
+	return Pack(DataPack{
+		Type: typeId,
+		Len: uint32(len(data)),
+		Data: data,
+	})
+}
+
 // GetHeadLen 获取包头字节 uint32 * 2
 func GetHeadLen() uint32 {
 	return 8
@@ -72,4 +81,26 @@ func ParsePack(conn *net.TCPConn) (*DataPack,error) {
 		return dataPack,nil
 	}
 	return nil,nil //无可用的数据包
+}
+func TcpConnUnPack(isUnPack bool,conn *net.TCPConn) (*DataPack,error) {
+	if isUnPack {
+		//使用拆包处理
+		dataPack,err := ParsePack(conn)
+		if err != nil {
+			return nil,err
+		}
+		return dataPack,nil
+	}else{
+		//不使用拆包处理
+		buffer := make([]byte,1024)
+		len,err := conn.Read(buffer)
+		if err != nil {
+			return nil,err
+		}
+		return &DataPack{
+			Type: 0x00,
+			Len: uint32(len),
+			Data: buffer[0:len],
+		},nil
+	}
 }

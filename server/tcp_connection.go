@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"github.com/balrogsxt/xtcp/pack"
 	"github.com/balrogsxt/xtcp/utils/logger"
 	"io"
@@ -26,6 +27,10 @@ type TcpConnection struct {
 	//上一次活动时间
 	heartLastTime int64
 	isClosed bool
+	//退出标识管道
+	ctx context.Context
+	cancel context.CancelFunc
+
 }
 
 func NewTcpConnection(fd int,s *TcpServer,conn *net.TCPConn) *TcpConnection {
@@ -34,10 +39,16 @@ func NewTcpConnection(fd int,s *TcpServer,conn *net.TCPConn) *TcpConnection {
 		conn: conn,
 		server: s,
 	}
+	ctx,cancel := context.WithCancel(context.Background())
+	tcpConn.ctx = ctx
+	tcpConn.cancel = cancel
+
 	tcpConn.isClosed = false
 	s.AddConnection(&tcpConn)
 	go tcpConn.listenReader()
-	go tcpConn.startHeart()
+	if s.config.HeartInterval > 0 && s.config.HeartTimeout >= s.config.HeartInterval{
+		go tcpConn.startHeart()
+	}
 	//心跳检测机制
 	return &tcpConn
 }
@@ -46,48 +57,46 @@ func (c *TcpConnection) listenReader()  {
 	if c.listener != nil {
 		c.listener.OnOpen(c)
 	}
-	defer func(c *TcpConnection) {
-		c.isClosed = true
-		c.GetServer().RemoveConnection(c.fd)
-		if c.listener != nil {
-			c.listener.OnClose(c)
-		}
-	}(c)
 	defer c.Close()
-	//持续接收客户端发来的数据
-
 	//心跳记录
 	c.recordHeart()
 	for {
-		dataPack,err := pack.ParsePack(c.conn)
-		if err != nil {
-			if err == io.EOF {
-				logger.Error("客户端连接已主动断开")
-			}else{
-				logger.Error("与客户端连接断开: %s",err.Error())
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+			dataPack,err := pack.TcpConnUnPack(c.server.config.DataPack,c.conn)
+			if err != nil {
+				if err == io.EOF {
+					logger.Error("客户端连接已主动断开")
+				}else{
+					logger.Error("与客户端连接断开: %s",err.Error())
+				}
+				c.cancel()
+				break
 			}
-			break
-		}
-		//心跳记录
-		c.recordHeart()
-
-		if c.listener != nil {
-			//解包数据
-			c.listener.OnMessage(c,dataPack)
+			//心跳记录
+			c.recordHeart()
+			if c.listener != nil {
+				//解包数据
+				c.listener.OnMessage(c,dataPack)
+			}
 		}
 	}
 }
 func (c *TcpConnection) recordHeart(){
-	//心跳记录
-	c.heartLastTime = time.Now().Unix()
+	if c.server.config.HeartInterval > 0 && c.server.config.HeartTimeout >= c.server.config.HeartInterval{
+		//心跳记录
+		c.heartLastTime = time.Now().Unix()
+	}
 }
 // startHeart 开启心跳检测
 func (c *TcpConnection) startHeart(){
 	// 检测时间、超时时间后续更改为可变配置
-	c.heartTimer = time.NewTicker(time.Second * 20)
+	c.heartTimer = time.NewTicker(time.Second * time.Duration(c.server.config.HeartInterval))
 	for {
 		<- c.heartTimer.C
-		if time.Now().Unix() - c.heartLastTime > 60 {
+		if time.Now().Unix() - c.heartLastTime > int64(c.server.config.HeartTimeout) {
 			//心跳超时
 			c.Close()
 			logger.Error("关闭超时心跳客户端: %s",c.GetRemoteAddr().String())
@@ -119,20 +128,22 @@ func (c *TcpConnection) GetRemoteAddr() net.Addr{
 	return c.conn.RemoteAddr()
 }
 
-//Send 发送数据包给客户端
-func (c *TcpConnection) Send(data []byte) error {
-
+//SendPack 发送封包数据包给客户端
+func (c *TcpConnection) SendPack(typeId uint32,data []byte) error {
 	//创建封包
 	bytes,err := pack.Pack(pack.DataPack{
-		Type: 1,
+		Type: typeId,
 		Len: uint32(len(data)),
 		Data: data,
 	})
 	if err != nil {
 		return err
 	}
-
-	_,err = c.conn.Write(bytes)
+	return c.SendBytes(bytes)
+}
+//SendBytes 发送字节流数据给客户端
+func (c *TcpConnection) SendBytes(data []byte) error {
+	_,err := c.conn.Write(data)
 	return err
 }
 //Close 主动断开该客户端连接
@@ -140,12 +151,20 @@ func (c *TcpConnection) Close() error {
 	c.Lock()
 	defer c.Unlock()
 	//做一些其他操作
+	if c.listener != nil {
+		c.listener.OnClose(c)
+	}
 	//1.关闭连接
 	c.conn.Close()
 	//2.关闭心跳检测定时器
 	if c.heartTimer != nil {
 		c.heartTimer.Stop()
+		c.heartTimer = nil
 	}
+	c.cancel()
 	c.isClosed = true
+	//删除连接管理
+	c.GetServer().RemoveConnection(c.fd)
+
 	return nil
 }
